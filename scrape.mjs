@@ -1,5 +1,6 @@
 // Reads every class's "מערכת ושינויים" table from Blich's public Shahaf site
-// and writes data.json: which rooms are busy at each day/hour. No dependencies (Node 18+).
+// and writes data.json: which rooms are busy at each day/hour, and which teacher is in which room.
+// No dependencies (Node 18+).
 import { writeFileSync } from 'node:fs';
 
 const BASE = 'https://blich.shahaf.site';
@@ -68,6 +69,43 @@ export function parsePage(html) {
   return out;
 }
 
+// the longest known room that `s` ends with, or null
+const roomAtEnd = (s, rooms) => {
+  let best = null;
+  for (const r of rooms) if ((s === r || s.endsWith(' ' + r)) && r.length > (best?.length ?? 0)) best = r;
+  return best;
+};
+const clean = (s) => s?.replace(/\s+/g, ' ').trim() || null;
+
+// Which teachers an item puts in a room (present: [[name, room|null]]) and which it takes out (absent: [name]).
+// Formats seen on the real site:
+//   Lesson           "פיזיקה  (ט1 104)\nשטיינברוך אפרים"        present: 2nd line, in the lesson's room
+//   TableFreeChange  "ביטול מתמטיקה, ושדי סיוון"                absent: after the last comma
+//   TableFillChange  "טובי שושה -> חדר: מח3 - 319"              present: moved to that room
+//                    "יעקב טל <- רגב עדי, היסטוריה יא14 142"   present: substitute (room = known room at the end), absent: the one replaced
+//                    "הזזת ביולוגיה, מימון חני לשעה 6"         absent: lesson moved to another hour
+//                    "השלמה  אלקבץ שפי ליזה, חינוך" / "תגבור ..." present (room only if a known room ends the line)
+//                    "לוי שחר, חינוך גופני"                     present, no room
+// Exams/events only say "לקבוצה של X" (the group's teacher, not necessarily who is in the room), so they are skipped.
+export function teachersOf(item, rooms = new Set()) {
+  const [line = '', second] = item.text.split('\n').map((l) => l.trim());
+  const present = [], absent = [];
+  let m;
+  if (item.kind === 'Lesson') present.push([clean(second), item.room]);
+  else if (item.kind === 'TableFreeChange') { if (line.includes(',')) absent.push(clean(line.slice(line.lastIndexOf(',') + 1))); }
+  else if (item.kind === 'TableFillChange') {
+    if ((m = line.match(/^(.+?)\s*->\s*חדר:/))) present.push([clean(m[1]), item.room]);
+    else if ((m = line.match(/^(.+?)\s*<-\s*(.+)$/))) {
+      const room = roomAtEnd(m[2], rooms);
+      present.push([clean(m[1]), room]);
+      absent.push(clean((room ? m[2].slice(0, -room.length) : m[2]).split(',')[0]));
+    } else if ((m = line.match(/^הזזת\s.*,\s*(.+?)\s+לשעה\s+\d+$/))) absent.push(clean(m[1]));
+    else if ((m = line.match(/^(?:השלמה|תגבור)\s+([^,]+)/))) present.push([clean(m[1]), roomAtEnd(line, rooms)]);
+    else if ((m = line.match(/^([^,]+),/))) present.push([clean(m[1]), null]);
+  }
+  return { present: present.filter(([n]) => n), absent: absent.filter(Boolean) };
+}
+
 export function build(pages) {
   const cells = pages.flat();
   // the room list = every room a regular lesson uses; exam/event text only counts if it names one of these
@@ -76,14 +114,28 @@ export function build(pages) {
   for (const c of cells) {
     const day = (days[c.date] ??= { holiday: c.holiday, hours: {} });
     if (c.holiday) day.holiday = c.holiday;
-    const hour = (day.hours[c.hour] ??= { start: c.start, end: c.end, busy: new Set() });
-    for (const i of c.items) if (i.room && (i.kind === 'TableFillChange' || rooms.has(i.room))) {
-      rooms.add(i.room);
-      hour.busy.add(i.room);
+    const hour = (day.hours[c.hour] ??= { start: c.start, end: c.end, busy: new Set(), lessons: [], fills: [], cancelled: new Set() });
+    for (const i of c.items) {
+      if (i.room && (i.kind === 'TableFillChange' || rooms.has(i.room))) {
+        rooms.add(i.room);
+        hour.busy.add(i.room);
+      }
+      const { present, absent } = teachersOf(i, rooms);
+      (i.kind === 'Lesson' ? hour.lessons : hour.fills).push(...present);
+      for (const t of absent) hour.cancelled.add(t);
     }
   }
   for (const d of Object.values(days))
-    for (const h of Object.values(d.hours)) h.busy = [...h.busy].sort();
+    for (const h of Object.values(d.hours)) {
+      h.busy = [...h.busy].sort();
+      // teachers: { name: room } for this hour; room is null when the lesson has no room (e.g. gym).
+      // A cancelled/replaced/moved lesson removes its teacher; a change that puts a teacher in a room always wins.
+      const teachers = {};
+      for (const [t, room] of h.lessons) if (!h.cancelled.has(t) && teachers[t] == null) teachers[t] = room;
+      for (const [t, room] of h.fills) teachers[t] = room;
+      h.teachers = Object.fromEntries(Object.entries(teachers).sort(([a], [b]) => a.localeCompare(b, 'he')));
+      delete h.lessons; delete h.fills; delete h.cancelled;
+    }
   return { updated: new Date().toISOString(), rooms: [...rooms].sort(), days };
 }
 
