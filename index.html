@@ -82,6 +82,9 @@
 const DB_URL = 'https://free-room-4c651-default-rtdb.europe-west1.firebasedatabase.app';
 // Google Analytics measurement ID, like 'G-ABC123' (see README). Empty = no analytics.
 const GA_ID = 'G-1BV6Q54MZW';
+// Firebase Web API key (Project settings → General → Your apps). It's public by design: the database rules do the protecting.
+// Empty = no claiming (the rules reject writes from anyone who isn't signed in).
+const API_KEY = '';
 if (GA_ID) {
   document.head.append(Object.assign(document.createElement('script'), { async: true, src: 'https://www.googletagmanager.com/gtag/js?id=' + GA_ID }));
   window.dataLayer = window.dataLayer || [];
@@ -98,7 +101,31 @@ const todayIso = () => iso(new Date());
 const nowHM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
                 set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
-const myId = store.get('id') || (() => { const id = crypto.randomUUID(); store.set('id', id); return id; })();
+const canClaim = DB_URL && API_KEY;
+
+// Firebase anonymous sign-in over REST: every device gets its own account, no sign-up. me = {id (token), refresh, uid, exp}
+let me = (() => { try { return JSON.parse(store.get('auth')); } catch { return null; } })();
+async function auth() {
+  if (me?.id && me.exp > Date.now() + 60e3) return me;
+  const post = (url, body, type) => fetch(url, { method: 'POST', headers: { 'content-type': type }, body }).then(r => r.json());
+  let j = me?.refresh && await post(`https://securetoken.googleapis.com/v1/token?key=${API_KEY}`,
+    `grant_type=refresh_token&refresh_token=${encodeURIComponent(me.refresh)}`, 'application/x-www-form-urlencoded');
+  j = j?.id_token ? { id: j.id_token, refresh: j.refresh_token, uid: j.user_id, exp: j.expires_in }
+    : await post(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${API_KEY}`, '{"returnSecureToken":true}', 'application/json')
+        .then(j => ({ id: j.idToken, refresh: j.refreshToken, uid: j.localId, exp: j.expiresIn }));
+  if (!j.id) throw new Error('sign-in failed');
+  me = { ...j, exp: Date.now() + j.exp * 1000 };
+  store.set('auth', JSON.stringify(me));
+  return me;
+}
+const withAuth = (url, a) => `${url}?auth=${encodeURIComponent(a.id)}`;
+// "I'm here" ping, so the owner's bot can see who is on the site right now
+async function ping() {
+  if (!canClaim || document.hidden) return;
+  const a = await auth().catch(() => null);
+  if (a) fetch(withAuth(`${DB_URL}/online/${a.uid}.json`, a), { method: 'PUT',
+    body: JSON.stringify({ by: store.get('name') || '', at: { '.sv': 'timestamp' } }) }).catch(() => {});
+}
 
 // "ט1 104*" -> {num:"104", label:"ט1", floor:"1"}; rooms without a 3-digit number are "special" (floor null)
 function show(room) {
@@ -168,7 +195,7 @@ function render() {
   const until = r => { let end = hours[hour].end; for (const h of later) { if (hours[h].busy.includes(r)) break; end = hours[h].end; } return end; };
   const open = free.filter(r => !claims[dbKey(r)]);
   // rooms claimed by others are hidden entirely; your own claim stays so you can release it
-  const shown = free.filter(r => !claims[dbKey(r)] || claims[dbKey(r)].id === myId);
+  const shown = free.filter(r => !claims[dbKey(r)] || claims[dbKey(r)].id === me?.uid);
 
   const out = [];
   if (data.days[day].holiday) out.push(el('div', { className: 'note' }, '📅 ' + data.days[day].holiday));
@@ -191,7 +218,7 @@ function card(r, untilTime) {
     kids.push(el('button', { type: 'button', onclick: () => unclaim(r) }, 'שחרר'));
   } else {
     kids.push(el('div', { className: 'until' }, 'פנוי עד ' + untilTime));
-    if (DB_URL) kids.push(el('button', { type: 'button', onclick: () => claim(r) }, 'אני הולך/ת לשם'));
+    if (canClaim) kids.push(el('button', { type: 'button', onclick: () => claim(r) }, 'אני הולך/ת לשם'));
   }
   return el('div', { className: 'room' + (c ? ' taken' : '') }, ...kids);
 }
@@ -224,12 +251,14 @@ function askName() {
 async function claim(r) {
   const name = store.get('name') || await askName();
   if (!name) return;
-  // shortcut: limit is checked here and enforced by bot.mjs (no login, so a new id gets around it)
+  const a = await auth().catch(() => null);
+  if (!a) return alert('לא הצלחתי להתחבר – בדוק חיבור לאינטרנט ונסה שוב.');
+  // shortcut: limit is checked here and enforced by the bot (rules can't count), clearing site data gets a new account
   const dayClaims = await fetch(`${DB_URL}/claims/${day}.json`).then(x => x.json()).catch(() => null) || {};
-  const mine = Object.values(dayClaims).flatMap(h => Object.values(h || {})).filter(c => c.id === myId).length;
+  const mine = Object.values(dayClaims).flatMap(h => Object.values(h || {})).filter(c => c.id === a.uid).length;
   if (mine >= MAX_PER_DAY) return alert(`אפשר לתפוס עד ${MAX_PER_DAY} כיתות ביום. שחרר/י כיתה אחרת קודם.`);
   // the database rules only allow writing to an empty slot, so two people can't claim the same room
-  const status = await fetch(claimUrl(r), { method: 'PUT', body: JSON.stringify({ by: name, id: myId, at: Date.now() }) })
+  const status = await fetch(withAuth(claimUrl(r), a), { method: 'PUT', body: JSON.stringify({ by: name, id: a.uid, at: { '.sv': 'timestamp' } }) })
     .then(x => x.status).catch(() => 0);
   if (status === 200) window.gtag?.('event', 'claim_room');
   if (status === 401) alert('מישהו תפס את החדר הזה רגע לפני 😅');
@@ -237,7 +266,8 @@ async function claim(r) {
   refreshClaims();
 }
 async function unclaim(r) {
-  await fetch(claimUrl(r, claims[dbKey(r)]?.h), { method: 'DELETE' }).catch(() => {});
+  const a = await auth().catch(() => null);
+  if (a) await fetch(withAuth(claimUrl(r, claims[dbKey(r)]?.h), a), { method: 'DELETE' }).catch(() => {});
   refreshClaims();
 }
 
@@ -252,7 +282,9 @@ async function load() {
   document.getElementById('updated').textContent =
     `המערכת עודכנה משחף ב-${u.getDate()}.${u.getMonth()+1} ${pad(u.getHours())}:${pad(u.getMinutes())}. חדר שנראה פנוי עדיין יכול להיות תפוס בפועל.`;
   select(pickDay(), null);
+  ping();
 }
+setInterval(ping, 60e3);
 load();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 setInterval(() => { if (!document.hidden) refreshClaims(); }, 20000);
