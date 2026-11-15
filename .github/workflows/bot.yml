@@ -16,3 +16,5 @@ jobs:
       - run: node bot.test.mjs && node bot.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}     # optional, see README
+          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}

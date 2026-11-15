@@ -32,6 +32,16 @@ async function alert(title, body) {
   if (open.some(i => i.title === title)) return; // already reported and not closed yet
   const res = await api('issues', { method: 'POST', body: JSON.stringify({ title, body }) });
   if (!res.ok) throw new Error(`GitHub issue failed: ${res.status} ${await res.text()}`);
+  await whatsapp(`🚨 ${title}\n\n${body}\n\n${(await res.json()).html_url}`);
+}
+
+// WhatsApp through CallMeBot (free, see README); only for new issues, so the same problem isn't sent every 15 min
+async function whatsapp(text) {
+  const { WHATSAPP_PHONE: phone, WHATSAPP_APIKEY: apikey } = process.env;
+  if (!phone || !apikey) return;
+  const url = `https://api.callmebot.com/whatsapp.php?${new URLSearchParams({ phone, apikey, text })}`;
+  const res = await fetch(url).catch(e => ({ ok: false, status: e.message }));
+  if (!res.ok) console.error(`WhatsApp failed: ${res.status}`); // the issue/email is already out, so don't fail the run
 }
 
 async function main() {

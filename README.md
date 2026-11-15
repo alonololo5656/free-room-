@@ -34,6 +34,16 @@
   ופותח **Issue** ב-GitHub כשיש משהו חריג: תפיסות שבוטלו, אותו שם שתופס מכמה מכשירים, או מערכת שלא מתעדכנת משחף.
   GitHub שולח מייל על כל Issue חדש. אחרי שטיפלת, סוגרים את ה-Issue.
 
+### הודעות בווצאפ (חינם, פעם אחת)
+1. שומרים באנשי הקשר בטלפון את המספר של CallMeBot. המספר המעודכן מופיע ב-callmebot.com/blog/free-api-whatsapp-messages.
+2. שולחים לו בווצאפ את ההודעה `I allow callmebot to send me messages`. תוך כמה דקות הוא עונה עם **apikey**.
+3. ב-GitHub: **Settings → Secrets and variables → Actions → New repository secret**, ומוסיפים שניים:
+   - `WHATSAPP_PHONE`: המספר שלך בפורמט בינלאומי, למשל `972501234567` (בלי 0 ובלי +).
+   - `WHATSAPP_APIKEY`: הקוד שקיבלת.
+4. **Actions → room bot → Run workflow**, כדי לבדוק שהבוט רץ בלי שגיאות.
+
+מעכשיו כל Issue חדש מגיע גם בווצאפ. אותה בעיה לא נשלחת שוב כל עוד ה-Issue פתוח.
+
 ## סטטיסטיקה – כמה נכנסים (Google Analytics, חינם, פעם אחת)
 1. בקונסולה של Firebase נכנסים לפרויקט → ⚙️ **Project settings** → לשונית **Integrations** → **Google Analytics** → **Enable** (אפשר ליצור חשבון Analytics חדש).
 2. באותו מקום ב-**Project settings → General**, למטה ב-**Your apps**, לוחצים על סמל ה-Web (`</>`) → נותנים שם → **Register app**.
