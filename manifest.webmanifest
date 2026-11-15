@@ -1,0 +1,12 @@
+{
+  "name": "כיתה פנויה - בליך",
+  "short_name": "כיתה פנויה",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "dir": "rtl",
+  "lang": "he",
+  "background_color": "#f5f7fb",
+  "theme_color": "#1d4ed8",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
