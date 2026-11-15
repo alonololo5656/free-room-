@@ -6,7 +6,7 @@
   "display": "standalone",
   "dir": "rtl",
   "lang": "he",
-  "background_color": "#f5f7fb",
-  "theme_color": "#1d4ed8",
+  "background_color": "#e9ebee",
+  "theme_color": "#1546c0",
   "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }
