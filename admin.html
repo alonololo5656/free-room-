@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>ניהול – כיתה פנויה</title>
+<meta name="theme-color" content="#4338ca">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#f3f4fa; --card:#fff; --text:#111322; --muted:#6b6f85; --accent:#4338ca;
+          --line:#e6e7f0; --ok:#059669; --okbg:#ecfdf5; --bad:#b91c1c; --badbg:#fef2f2; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0c0d16; --card:#171927; --text:#eceef8; --muted:#9a9db3; --accent:#818cf8;
+          --line:#272a3d; --ok:#34d399; --okbg:#0f2a22; --bad:#f87171; --badbg:#2b1414; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Rubik,system-ui,-apple-system,"Segoe UI",Arial,sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:640px; margin:0 auto; padding:0 16px 40px; }
+  header { background:linear-gradient(135deg,#4338ca,#7c3aed); color:#fff; padding:max(20px,env(safe-area-inset-top)) 20px 20px;
+           border-radius:0 0 28px 28px; margin:0 -16px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  header h1 { font-size:1.5rem; margin:0; }
+  header button { background:rgba(255,255,255,.18); color:#fff; border:0; border-radius:999px; padding:6px 14px; }
+  button { font-family:inherit; font-size:15px; cursor:pointer; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:14px 16px; margin-bottom:12px; }
+  .card h2 { font-size:1rem; margin:0 0 10px; }
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:12px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:12px; text-align:center; }
+  .stat b { display:block; font-size:1.8rem; color:var(--accent); }
+  .stat span { font-size:.8rem; color:var(--muted); }
+  .muted { color:var(--muted); font-size:.85rem; }
+  .names { display:flex; flex-wrap:wrap; gap:6px; }
+  .names span { background:var(--bg); border-radius:999px; padding:4px 10px; font-size:.85rem; }
+  .row { display:flex; gap:8px; overflow-x:auto; padding-bottom:6px; margin-bottom:6px; scrollbar-width:none; }
+  .row::-webkit-scrollbar { display:none; }
+  .chip { flex:none; border:1px solid var(--line); background:var(--card); color:var(--text); border-radius:14px; padding:6px 12px; }
+  .chip[aria-pressed=true] { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .claim { display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line); }
+  .claim:first-of-type { border-top:0; }
+  .claim .who { flex:1; min-width:0; }
+  .claim .who small { display:block; color:var(--muted); font-size:.8rem; }
+  .x { border:0; border-radius:10px; padding:6px 12px; background:var(--badbg); color:var(--bad); font-weight:500; }
+  .bad { background:var(--badbg); border-color:var(--bad); }
+  .bad h2 { color:var(--bad); }
+  .bad ul { margin:6px 0 10px; padding-inline-start:20px; }
+  .go { border:0; border-radius:12px; padding:9px 14px; background:var(--bad); color:#fff; font-weight:500; }
+  form { display:flex; flex-direction:column; gap:10px; }
+  input { font:inherit; font-size:16px; padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:var(--bg); color:var(--text); }
+  form button { border:0; border-radius:12px; padding:11px; background:var(--accent); color:#fff; font-weight:500; }
+  .err { color:var(--bad); font-size:.9rem; }
+  code { user-select:all; background:var(--bg); padding:2px 6px; border-radius:6px; direction:ltr; display:inline-block; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>ניהול 🛠️</h1><button id="logout" hidden>יציאה</button></header>
+  <div id="app" aria-live="polite"></div>
+</main>
+<script type="module">
+import { MAX_PER_DAY, flatten, overLimit, suspiciousNames } from './bot.mjs';
+
+const DB_URL = 'https://free-room-4c651-default-rtdb.europe-west1.firebasedatabase.app';
+const API_KEY = 'AIzaSyD4vVpPQHvb7Ud7l22rfhJCyBd61uk6_vk';
+const app = document.getElementById('app');
+const el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+const ilDate = t => new Date(t).toLocaleDateString('sv', { timeZone: 'Asia/Jerusalem' });
+const today = () => ilDate(Date.now());
+const store = { get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+                set: (k, v) => { try { v ? localStorage.setItem(k, JSON.stringify(v)) : localStorage.removeItem(k); } catch {} } };
+
+// ---------- sign-in (Firebase email/password over REST; the database rules decide who is admin) ----------
+let me = store.get('adminAuth');
+const post = (url, body, type = 'application/json') => fetch(url, { method: 'POST', headers: { 'content-type': type }, body }).then(r => r.json());
+const save = j => { me = { id: j.idToken ?? j.id_token, refresh: j.refreshToken ?? j.refresh_token, uid: j.localId ?? j.user_id,
+                           exp: Date.now() + (j.expiresIn ?? j.expires_in) * 1000 }; store.set('adminAuth', me); };
+async function token() {
+  if (me.exp > Date.now() + 60e3) return me.id;
+  const j = await post(`https://securetoken.googleapis.com/v1/token?key=${API_KEY}`,
+    `grant_type=refresh_token&refresh_token=${encodeURIComponent(me.refresh)}`, 'application/x-www-form-urlencoded');
+  if (!j.id_token) { logout(); throw new Error('צריך להתחבר מחדש'); }
+  save(j); return me.id;
+}
+async function db(path, method = 'GET') {
+  const res = await fetch(`${DB_URL}/${path}.json?auth=${encodeURIComponent(await token())}`, { method });
+  if (res.status === 401) throw Object.assign(new Error('no admin'), { noAdmin: true });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+function logout() { me = null; store.set('adminAuth', null); render(); }
+document.getElementById('logout').onclick = logout;
+
+function loginForm(msg = '') {
+  const email = el('input', { type: 'email', placeholder: 'מייל', autocomplete: 'username', required: true, dir: 'ltr' });
+  const pw = el('input', { type: 'password', placeholder: 'סיסמה', autocomplete: 'current-password', required: true, dir: 'ltr' });
+  const err = el('div', { className: 'err' }, msg);
+  const form = el('form', { onsubmit: async e => {
+    e.preventDefault(); err.textContent = '';
+    const j = await post(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${API_KEY}`,
+      JSON.stringify({ email: email.value.trim(), password: pw.value, returnSecureToken: true })).catch(() => ({}));
+    if (!j.idToken) { err.textContent = 'מייל או סיסמה לא נכונים (או שאין חיבור).'; return; }
+    save(j); render();
+  } }, el('h2', {}, 'כניסת מנהל'), email, pw, el('button', {}, 'כניסה'), err);
+  return el('div', { className: 'card' }, form);
+}
+
+// ---------- the panel ----------
+let days = [], day = today(), timer;
+async function render() {
+  clearTimeout(timer);
+  document.getElementById('logout').hidden = !me;
+  if (!me) return app.replaceChildren(loginForm());
+  try {
+    if (!days.length) days = Object.keys((await fetch('data.json', { cache: 'no-cache' }).then(r => r.json())).days).filter(d => d >= today()).sort();
+    if (!days.includes(day)) day = days[0];
+    const [online, ...perDay] = await Promise.all([db('online'), ...days.map(d => db(`claims/${d}`))]);
+    const claims = Object.fromEntries(days.map((d, i) => [d, flatten(perDay[i])]));
+    app.replaceChildren(stats(Object.values(online || {})), problems(claims), claimList(claims[day] || []));
+  } catch (e) {
+    if (e.noAdmin) return app.replaceChildren(el('div', { className: 'card' }, el('h2', {}, 'אין לחשבון הזה הרשאת ניהול עדיין'),
+      el('p', {}, 'שלח את המספר הזה כדי לקבל הרשאה:'), el('code', {}, me.uid)));
+    app.replaceChildren(el('div', { className: 'card err' }, 'שגיאה: ' + e.message));
+  }
+  timer = setTimeout(() => { if (!document.hidden) render(); }, 20e3); // paused while hidden; visibilitychange restarts it
+}
+
+function stats(online) {
+  const now = online.filter(u => u.at > Date.now() - 3 * 60e3);
+  const todayList = online.filter(u => ilDate(u.at) === today());
+  const names = list => { const n = list.map(u => u.by).filter(Boolean), anon = list.length - n.length;
+    return el('div', { className: 'names' }, ...n.map(x => el('span', {}, x)), ...(anon ? [el('span', {}, `${anon} בלי שם`)] : [])); };
+  const stat = (n, label) => el('div', { className: 'stat' }, el('b', {}, n), el('span', {}, label));
+  return el('div', {},
+    el('div', { className: 'stats' }, stat(now.length, 'מחוברים עכשיו'), stat(todayList.length, 'נכנסו היום'), stat(online.length, 'מכשירים בסך הכול')),
+    el('div', { className: 'card' }, el('h2', {}, '🟢 מחוברים עכשיו'), now.length ? names(now) : el('div', { className: 'muted' }, 'אף אחד כרגע')),
+    el('div', { className: 'card' }, el('h2', {}, '📅 נכנסו היום'), todayList.length ? names(todayList) : el('div', { className: 'muted' }, 'עוד אף אחד')));
+}
+
+function problems(claims) {
+  const extra = Object.entries(claims).flatMap(([d, list]) => overLimit(list).map(c => ({ ...c, date: d })));
+  const sus = Object.entries(claims).flatMap(([d, list]) => suspiciousNames(list).map(s => ({ ...s, date: d })));
+  if (!extra.length && !sus.length) return el('div', { className: 'card' }, el('h2', {}, '✅ אין חריגות'));
+  const kids = [el('h2', {}, '🚨 חריגות')];
+  if (extra.length) kids.push(el('div', {}, `תפיסות מעל ${MAX_PER_DAY} ביום לאותו מכשיר:`),
+    el('ul', {}, ...extra.map(c => el('li', {}, `${c.date}, שעה ${c.hour}, ${c.room}: ${c.by}`))),
+    el('button', { className: 'go', onclick: () => cancel(extra, `לבטל ${extra.length} תפיסות מעל המגבלה?`) }, `בטל ${extra.length} תפיסות מעל המגבלה`));
+  if (sus.length) kids.push(el('div', { style: 'margin-top:10px' }, 'אותו שם מכמה מכשירים (אולי מישהו עוקף את המגבלה):'),
+    el('ul', {}, ...sus.map(s => el('li', {}, `${s.date}: "${s.name}" תפס ${s.count} כיתות מ-${s.ids} מכשירים`))));
+  return el('div', { className: 'card bad' }, ...kids);
+}
+
+function claimList(list) {
+  list.sort((a, b) => a.hour - b.hour || a.room.localeCompare(b.room));
+  const chips = el('div', { className: 'row' }, ...days.map(d => {
+    const b = el('button', { className: 'chip', onclick: () => { day = d; render(); } }, d === today() ? 'היום' : `${+d.slice(8)}.${+d.slice(5, 7)}`);
+    b.setAttribute('aria-pressed', d === day); return b;
+  }));
+  const rows = list.map(c => el('div', { className: 'claim' },
+    el('div', { className: 'who' }, `${c.by}`, el('small', {}, `שעה ${c.hour} · ${c.room}`)),
+    el('button', { className: 'x', onclick: () => cancel([{ ...c, date: day }], `לבטל את התפיסה של ${c.by} (שעה ${c.hour}, ${c.room})?`) }, 'בטל')));
+  return el('div', { className: 'card' }, el('h2', {}, `🙋 תפיסות (${list.length})`), chips,
+    ...(rows.length ? rows : [el('div', { className: 'muted' }, 'אין תפיסות ביום הזה')]));
+}
+
+async function cancel(list, question) {
+  if (!confirm(question)) return;
+  try { for (const c of list) await db(`claims/${c.date}/${encodeURIComponent(c.hour)}/${encodeURIComponent(c.room)}`, 'DELETE'); }
+  catch (e) { alert('לא הצלחתי לבטל: ' + e.message); }
+  render();
+}
+
+render();
+document.addEventListener('visibilitychange', () => { if (!document.hidden && me) render(); });
+</script>
+</body>
+</html>
