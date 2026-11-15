@@ -80,6 +80,15 @@
 <script>
 // Firebase Realtime Database URL for room claims (see README). Empty = app works without claiming.
 const DB_URL = 'https://free-room-4c651-default-rtdb.europe-west1.firebasedatabase.app';
+// Google Analytics measurement ID, like 'G-ABC123' (see README). Empty = no analytics.
+const GA_ID = '';
+if (GA_ID) {
+  document.head.append(Object.assign(document.createElement('script'), { async: true, src: 'https://www.googletagmanager.com/gtag/js?id=' + GA_ID }));
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function () { dataLayer.push(arguments); };
+  gtag('js', new Date());
+  gtag('config', GA_ID);
+}
 
 const DAY = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
 const MONTH = ['בינואר','בפברואר','במרץ','באפריל','במאי','ביוני','ביולי','באוגוסט','בספטמבר','באוקטובר','בנובמבר','בדצמבר'];
@@ -212,6 +221,7 @@ async function claim(r) {
   // the database rules only allow writing to an empty slot, so two people can't claim the same room
   const status = await fetch(claimUrl(r), { method: 'PUT', body: JSON.stringify({ by: name, id: myId, at: Date.now() }) })
     .then(x => x.status).catch(() => 0);
+  if (status === 200) window.gtag?.('event', 'claim_room');
   if (status === 401) alert('מישהו תפס את החדר הזה רגע לפני 😅');
   else if (status !== 200) alert('לא הצלחתי לתפוס – בדוק חיבור לאינטרנט ונסה שוב.');
   refreshClaims();
