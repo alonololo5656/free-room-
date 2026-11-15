@@ -55,6 +55,9 @@
   dialog .btns { display:flex; gap:8px; }
   dialog .btns button { flex:1; border:0; border-radius:12px; padding:10px; background:var(--accent); color:#fff; }
   dialog .btns button[value=cancel] { background:var(--line); color:var(--text); }
+  #install { margin-top:12px; border:0; border-radius:999px; padding:8px 16px; background:#fff; color:#4338ca; font-weight:700; font-size:.9rem; }
+  #install[hidden] { display:none; }
+  #installDialog ol { padding-inline-start:20px; margin:10px 0 16px; line-height:1.9; }
 </style>
 </head>
 <body>
@@ -63,6 +66,7 @@
     <h1>כיתה פנויה 🏫</h1>
     <div class="today" id="today"></div>
     <div class="now" id="now" hidden></div>
+    <div><button id="install" hidden>📲 הורד לטלפון</button></div>
   </header>
   <div class="label">יום</div><div class="row" id="days" role="group" aria-label="בחירת יום"></div>
   <div class="label">שעה</div><div class="row" id="hours" role="group" aria-label="בחירת שעה"></div>
@@ -75,6 +79,13 @@
     <div class="muted">החדר שתפסת לא יופיע יותר לאחרים ברשימת הפנויים</div>
     <input id="nameInput" maxlength="20" required autocomplete="nickname">
     <div class="btns"><button value="ok">תפוס</button><button value="cancel" formnovalidate>ביטול</button></div>
+  </form>
+</dialog>
+<dialog id="installDialog">
+  <form method="dialog">
+    <b>איך מורידים לטלפון</b>
+    <ol id="installSteps"></ol>
+    <div class="btns"><button value="ok">הבנתי</button></div>
   </form>
 </dialog>
 <script>
@@ -289,6 +300,26 @@ load();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 setInterval(() => { if (!document.hidden) refreshClaims(); }, 20000);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+
+// Install button: Android/Chrome installs directly via beforeinstallprompt; iPhone can't, so show steps.
+const installBtn = document.getElementById('install');
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let installEvt = null;
+if (!matchMedia('(display-mode: standalone)').matches && !navigator.standalone) installBtn.hidden = false;
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; });
+addEventListener('appinstalled', () => { installBtn.hidden = true; });
+installBtn.onclick = async () => {
+  if (installEvt) {
+    installEvt.prompt();
+    if ((await installEvt.userChoice).outcome === 'accepted') installBtn.hidden = true;
+    installEvt = null;
+    return;
+  }
+  document.getElementById('installSteps').innerHTML = isIOS
+    ? '<li>פתחו את האתר ב-<b>Safari</b></li><li>לחצו על כפתור השיתוף <b>⬆️</b> בתחתית המסך</li><li>גללו ובחרו <b>"הוסף למסך הבית"</b></li><li>לחצו <b>"הוסף"</b> למעלה</li>'
+    : '<li>פתחו את האתר ב-<b>Chrome</b></li><li>לחצו על <b>⋮</b> למעלה</li><li>בחרו <b>"התקנת אפליקציה"</b> או <b>"הוספה למסך הבית"</b></li>';
+  document.getElementById('installDialog').showModal();
+};
 </script>
 </body>
 </html>
