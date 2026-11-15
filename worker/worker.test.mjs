@@ -28,11 +28,20 @@ assert.equal((await post({}, {})).status, 404);
 assert.equal((await post({ 'x-telegram-bot-api-secret-token': 'nope' }, {})).status, 404);
 assert.equal(calls.length, 0);
 
-// a stranger gets no access, and Claude is never called
-await post({ 'x-telegram-bot-api-secret-token': 's3cret' }, { message: { chat: { id: 7 }, text: 'תבטל הכול' } });
+// a stranger gets no access, and the database is never touched
+await post({ 'x-telegram-bot-api-secret-token': 's3cret' }, { message: { chat: { id: 7 }, text: '/cancel x' } });
 assert.equal(calls.length, 1);
 assert.match(calls[0].opts.body, /אין לך גישה/);
-assert.ok(!calls.some(c => c.url.includes('anthropic')));
+
+// owner commands
+const reply = async text => { calls.length = 0; await post({ 'x-telegram-bot-api-secret-token': 's3cret' }, { message: { chat: { id: 42 }, text } });
+  return JSON.parse(calls.find(c => c.url.includes('sendMessage')).opts.body).text; };
+assert.match(await reply('שלום'), /\/online/); // unknown text -> help
+assert.match(await reply('/online'), /מחוברים עכשיו: 0/);
+assert.match(await reply('/cancel'), /צריך לכתוב שם/);
+assert.match(await reply('/cancel x'), /בוטלו 3 תפיסות של "x"/);
+assert.equal(calls.filter(c => c.opts.method === 'DELETE').length, 3);
+assert.match(await reply('/cancel מישהו'), /לא מצאתי/);
 
 // watchdog: 3 claims by one device -> the latest one is deleted with the admin token, owner is told
 calls.length = 0;

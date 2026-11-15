@@ -1,14 +1,14 @@
 // Telegram bot for the site owner, on Cloudflare Workers (see README → "בוט בטלגרם").
-// - You chat with it in Hebrew; Claude answers using the tools below (who's online, claims, cancelling claims).
+// - Answers fixed commands (/online, /today, /tomorrow, /cancel <name>), only to the owner.
 // - Every 15 minutes it enforces the claim limit and messages you about anything unusual.
-// Secrets (wrangler secret put): TELEGRAM_TOKEN, OWNER_CHAT_ID, WEBHOOK_SECRET, ANTHROPIC_API_KEY, FIREBASE_SA
-import Anthropic from '@anthropic-ai/sdk';
-import { betaTool } from '@anthropic-ai/sdk/helpers/beta/json-schema';
+// Secrets (wrangler secret put): TELEGRAM_TOKEN, OWNER_CHAT_ID, WEBHOOK_SECRET, FIREBASE_SA
 import { MAX_PER_DAY, flatten, overLimit, suspiciousNames } from '../bot.mjs';
 
 const DB_URL = 'https://free-room-4c651-default-rtdb.europe-west1.firebasedatabase.app';
 const SITE = 'https://alonololo5656.github.io/free-room-';
-const today = () => new Date().toLocaleDateString('sv', { timeZone: 'Asia/Jerusalem' });
+const ilDate = t => new Date(t).toLocaleDateString('sv', { timeZone: 'Asia/Jerusalem' });
+const today = () => ilDate(Date.now());
+const tomorrow = () => ilDate(Date.now() + 864e5);
 const dbKey = s => encodeURIComponent(String(s).replace(/[.#$\[\]\/]/g, '_'));
 
 // ---------- Firebase as admin (service account key → short-lived Google token; bypasses the rules) ----------
@@ -38,73 +38,62 @@ async function db(env, path, method = 'GET', body) {
   if (!res.ok) throw new Error(`db ${method} ${path}: ${res.status} ${await res.text()}`);
   return res.json();
 }
+const timetable = () => fetch(`${SITE}/data.json`, { cache: 'no-store' }).then(r => r.json());
 
 // ---------- Telegram ----------
 const tg = (env, method, body) => fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/${method}`,
   { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 const send = (env, chat_id, text) => tg(env, 'sendMessage', { chat_id, text: text.slice(0, 4000) });
 
-// ---------- what Claude can do ----------
-const tools = env => [
-  betaTool({
-    name: 'list_online',
-    description: 'מי נמצא באתר עכשיו (לפי שם, אם הגדיר), וכמה מכשירים נכנסו היום ובסך הכול. מכשיר בלי שם עוד לא תפס כיתה אף פעם.',
-    inputSchema: { type: 'object', properties: { minutes: { type: 'integer', description: 'כמה דקות אחורה נחשב "מחובר". ברירת מחדל 3' } }, additionalProperties: false },
-    run: async ({ minutes = 3 }) => {
-      const all = Object.values(await db(env, 'online') || {});
-      const since = Date.now() - minutes * 60e3, day = at => new Date(at).toLocaleDateString('sv', { timeZone: 'Asia/Jerusalem' });
-      const now = all.filter(u => u.at > since).sort((a, b) => b.at - a.at);
-      return JSON.stringify({
-        online_now: now.length,
-        names_now: now.map(u => u.by || 'בלי שם'),
-        devices_today: all.filter(u => day(u.at) === today()).length,
-        devices_ever: all.length });
-    },
-  }),
-  betaTool({
-    name: 'list_claims',
-    description: 'כל התפיסות של יום מסוים: שעה, חדר, שם, מזהה מכשיר.',
-    inputSchema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD' } }, required: ['date'], additionalProperties: false },
-    run: async ({ date }) => JSON.stringify(flatten(await db(env, `claims/${dbKey(date)}`))
-      .map(({ hour, room, by, id }) => ({ hour, room, by, device: id }))),
-  }),
-  betaTool({
-    name: 'cancel_claims',
-    description: 'ביטול תפיסות. קודם קרא ל-list_claims כדי לדעת שעה וחדר מדויקים.',
-    inputSchema: { type: 'object', additionalProperties: false, required: ['date', 'claims'], properties: {
-      date: { type: 'string', description: 'YYYY-MM-DD' },
-      claims: { type: 'array', items: { type: 'object', required: ['hour', 'room'], additionalProperties: false,
-        properties: { hour: { type: 'string' }, room: { type: 'string', description: 'שם החדר בדיוק כמו ב-list_claims' } } } } } },
-    run: async ({ date, claims }) => {
-      for (const c of claims) await db(env, `claims/${dbKey(date)}/${dbKey(c.hour)}/${dbKey(c.room)}`, 'DELETE');
-      return `בוטלו ${claims.length} תפיסות`;
-    },
-  }),
+// ---------- commands ----------
+const COMMANDS = [
+  ['online', 'מי מחובר עכשיו וכמה נכנסו היום'],
+  ['today', 'כל התפיסות של היום'],
+  ['tomorrow', 'כל התפיסות של מחר'],
+  ['cancel', 'ביטול תפיסות של שם, למשל: /cancel דני'],
 ];
+const HELP = 'מה אפשר לבקש:\n' + COMMANDS.map(([c, d]) => `/${c} – ${d}`).join('\n');
 
-async function ask(env, text) {
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  const final = await client.beta.messages.toolRunner({
-    model: 'claude-opus-5-5',
-    max_tokens: 16000,
-    output_config: { effort: 'low' },
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default', // if the model declines, the API retries on a fallback model
-    max_iterations: 8,
-    system: `אתה העוזר של מנהל האתר "כיתה פנויה" בבית ספר בליך. תלמידים "תופסים" באתר כיתות פנויות לשעה מסוימת, עד ${MAX_PER_DAY} ביום לאדם.
-היום ${today()} (שעון ישראל). ענה בעברית, קצר וברור, כמו הודעת טלגרם.
-אפשר לעשות רק מה שהכלים מאפשרים: לראות מי מחובר, לראות תפיסות ולבטל תפיסות. אם מבקשים משהו אחר, תגיד שאין לך את זה עדיין.
-לפני ביטול של יותר מ-5 תפיסות, תאשר עם המנהל מה בדיוק יבוטל, אלא אם הוא כבר ביקש במפורש.`,
-    tools: tools(env),
-    messages: [{ role: 'user', content: text }],
-  });
-  if (final.stop_reason === 'refusal') return 'לא יכול לעזור בזה.';
-  return final.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || 'בוצע.';
+async function online(env) {
+  const all = Object.values(await db(env, 'online') || {});
+  const now = all.filter(u => u.at > Date.now() - 3 * 60e3).sort((a, b) => b.at - a.at);
+  const names = now.map(u => u.by || 'בלי שם (עוד לא תפס כיתה)');
+  return `🟢 מחוברים עכשיו: ${now.length}` + (names.length ? '\n' + names.map(n => `- ${n}`).join('\n') : '') +
+    `\n📅 נכנסו היום: ${all.filter(u => ilDate(u.at) === today()).length} מכשירים` +
+    `\n📊 בסך הכול: ${all.length} מכשירים`;
+}
+
+async function claimsOf(env, date) {
+  const list = flatten(await db(env, `claims/${date}`)).sort((a, b) => a.hour - b.hour || a.room.localeCompare(b.room));
+  if (!list.length) return `אין תפיסות ב-${date}.`;
+  return `🙋 תפיסות ב-${date} (${list.length}):\n` + list.map(c => `- שעה ${c.hour}, ${c.room}: ${c.by}`).join('\n');
+}
+
+// cancels every claim under that exact name, today and on later days
+async function cancel(env, name) {
+  if (!name) return 'צריך לכתוב שם, למשל: /cancel דני';
+  const dates = Object.keys((await timetable()).days).filter(d => d >= today());
+  const done = [];
+  for (const date of dates)
+    for (const c of flatten(await db(env, `claims/${date}`)).filter(c => c.by.trim() === name)) {
+      await db(env, `claims/${date}/${dbKey(c.hour)}/${dbKey(c.room)}`, 'DELETE');
+      done.push(`- ${date}, שעה ${c.hour}, ${c.room}`);
+    }
+  return done.length ? `✅ בוטלו ${done.length} תפיסות של "${name}":\n${done.join('\n')}` : `לא מצאתי תפיסות בשם "${name}" (השם צריך להיות בדיוק כמו באתר).`;
+}
+
+export async function handle(env, text) {
+  const [, cmd, arg = ''] = text.trim().match(/^\/(\w+)(?:@\w+)?\s*([\s\S]*)$/) || [];
+  if (cmd === 'online') return online(env);
+  if (cmd === 'today') return claimsOf(env, today());
+  if (cmd === 'tomorrow') return claimsOf(env, tomorrow());
+  if (cmd === 'cancel') return cancel(env, arg.trim());
+  return HELP;
 }
 
 // ---------- watchdog (cron) ----------
 async function watchdog(env) {
-  const data = await fetch(`${SITE}/data.json`, { cache: 'no-store' }).then(r => r.json());
+  const data = await timetable();
   const sent = await db(env, 'bot/sent') || {};
   const once = async (key, text) => { // the same problem is reported once, not every 15 min
     if (sent[dbKey(key)]) return;
@@ -116,11 +105,11 @@ async function watchdog(env) {
     const list = flatten(await db(env, `claims/${date}`));
     const extra = overLimit(list);
     for (const c of extra) await db(env, `claims/${date}/${dbKey(c.hour)}/${dbKey(c.room)}`, 'DELETE');
-    if (extra.length) await send(env, env.OWNER_CHAT_ID, `🚨 בוטלו ${extra.length} תפיסות מעל המגבלה ב-${date}:\n` +
+    if (extra.length) await send(env, env.OWNER_CHAT_ID, `🚨 בוטלו ${extra.length} תפיסות מעל המגבלה (${MAX_PER_DAY} ביום) ב-${date}:\n` +
       extra.map(c => `- ${c.by}: שעה ${c.hour}, ${c.room}`).join('\n') + '\nלא צריך לעשות כלום.');
     for (const s of suspiciousNames(list)) await once(`name ${date} ${s.name}`,
       `⚠️ חשד לעקיפת המגבלה ב-${date}: "${s.name}" תפס ${s.count} כיתות מ-${s.ids} מכשירים שונים. ` +
-      `אולי שני אנשים עם אותו שם. אפשר לכתוב לי "תראה לי את התפיסות של ${date}" או "תבטל את התפיסות של ${s.name}".`);
+      `אולי שני אנשים עם אותו שם. לבדיקה: /today או /tomorrow. לביטול: /cancel ${s.name}`);
   }
 
   // the timetable is refreshed every 30 min on school days; much older means scrape.mjs is broken
@@ -136,6 +125,7 @@ export default {
     // one-time: open https://<worker>/setup?key=<WEBHOOK_SECRET> to point Telegram at this worker
     if (url.pathname === '/setup' && env.WEBHOOK_SECRET && url.searchParams.get('key') === env.WEBHOOK_SECRET) {
       const r = await tg(env, 'setWebhook', { url: `${url.origin}/telegram`, secret_token: env.WEBHOOK_SECRET, allowed_updates: ['message'] });
+      await tg(env, 'setMyCommands', { commands: COMMANDS.map(([command, description]) => ({ command, description })) });
       return new Response(await r.text(), { headers: { 'content-type': 'application/json' } });
     }
     if (url.pathname !== '/telegram' || !env.WEBHOOK_SECRET || req.headers.get('x-telegram-bot-api-secret-token') !== env.WEBHOOK_SECRET)
@@ -148,8 +138,7 @@ export default {
       await send(env, message.chat.id, `אין לך גישה לבוט הזה. (chat id: ${message.chat.id})`);
       return new Response('ok');
     }
-    await tg(env, 'sendChatAction', { chat_id: message.chat.id, action: 'typing' });
-    const reply = await ask(env, message.text).catch(e => `❌ שגיאה: ${e.message}`);
+    const reply = await handle(env, message.text).catch(e => `❌ שגיאה: ${e.message}`);
     await send(env, message.chat.id, reply);
     return new Response('ok');
   },

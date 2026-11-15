@@ -39,35 +39,31 @@
 הבוט רץ ב-Cloudflare Workers (חינם), בתיקייה `worker/`. מה הוא עושה:
 - **כל 15 דקות** הוא מבטל תפיסות מעל המגבלה (נשארות 2 הראשונות) ושולח לך הודעה כשיש משהו חריג:
   תפיסות שבוטלו, אותו שם שתופס מכמה מכשירים, או מערכת שלא מתעדכנת משחף.
-- **אפשר לדבר איתו בעברית חופשית**, למשל "כמה מחוברים עכשיו?", "מי תפס כיתות מחר?", "תבטל את התפיסות של דני ביום שלישי".
-  הוא עונה בעזרת Claude, ועונה רק לך.
+- **פקודות** (עונה רק לך): `/online` מי מחובר, `/today` ו-`/tomorrow` תפיסות, `/cancel דני` ביטול כל התפיסות של דני.
 
 1. **בוט בטלגרם:** בטלגרם מחפשים את `@BotFather` → `/newbot` → נותנים שם ושם משתמש. שומרים את ה-**token** שהוא שולח.
-2. **מפתח של Claude:** ב-platform.claude.com → **API Keys → Create Key**. שומרים את המפתח.
-   כל הודעה לבוט עולה בערך סנט עד שלושה. אפשר להגביל הוצאה ב-**Billing → Spend limits**.
-3. **מפתח ניהול של Firebase:** **⚙️ Project settings → Service accounts → Generate new private key**.
+2. **מפתח ניהול של Firebase:** **⚙️ Project settings → Service accounts → Generate new private key**.
    יורד קובץ JSON. לא מעלים אותו ל-GitHub ולא שולחים אותו לאף אחד.
-4. **Cloudflare:** פותחים חשבון חינם ב-dash.cloudflare.com, ואז בתיקייה `worker`:
+3. **Cloudflare:** פותחים חשבון חינם ב-dash.cloudflare.com, ואז בתיקייה `worker`:
    ```
    npm install
    npx wrangler login
    npx wrangler deploy
    ```
    בסוף מופיעה כתובת כמו `https://free-room-bot.<שם>.workers.dev`.
-5. **סודות** (כל פקודה שואלת את הערך):
+4. **סודות** (כל פקודה שואלת את הערך):
    ```
    npx wrangler secret put TELEGRAM_TOKEN
-   npx wrangler secret put ANTHROPIC_API_KEY
    npx wrangler secret put WEBHOOK_SECRET
    npx wrangler secret put OWNER_CHAT_ID
    npx wrangler secret put FIREBASE_SA < "<הנתיב לקובץ ה-JSON>"
    ```
    - `WEBHOOK_SECRET`: סיסמה ארוכה שממציאים (אותיות ומספרים בלבד).
-   - `OWNER_CHAT_ID`: בהתחלה שמים `0`. אחרי שלב 6 שולחים לבוט הודעה, והוא עונה עם ה-chat id שלך.
+   - `OWNER_CHAT_ID`: בהתחלה שמים `0`. אחרי שלב 5 שולחים לבוט הודעה, והוא עונה עם ה-chat id שלך.
      מריצים שוב את הפקודה עם המספר הזה.
-6. **מחברים את טלגרם לבוט:** פותחים בדפדפן `https://free-room-bot.<שם>.workers.dev/setup?key=<WEBHOOK_SECRET>`.
+5. **מחברים את טלגרם לבוט:** פותחים בדפדפן `https://free-room-bot.<שם>.workers.dev/setup?key=<WEBHOOK_SECRET>`.
    אמור להופיע `"ok":true`.
-7. שולחים לבוט "כמה מחוברים עכשיו?" ובודקים שהוא עונה.
+6. שולחים לבוט `/online` ובודקים שהוא עונה.
 
 בדיקות בלי אינטרנט: `node bot.test.mjs` ו-`cd worker && node worker.test.mjs`.
 
