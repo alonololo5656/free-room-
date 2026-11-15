@@ -24,25 +24,52 @@
 2. בתפריט: **Build → Realtime Database → Create Database** → מיקום `europe-west1` → **Start in locked mode**.
 3. בלשונית **Rules** מוחקים הכול, מדביקים את התוכן של `database.rules.json` → **Publish**.
 4. בלשונית **Data** מעתיקים את הכתובת שלמעלה (משהו כמו `https://xxx-default-rtdb.europe-west1.firebasedatabase.app`).
-5. ב-`index.html` שמים אותה בשורה `const DB_URL = '';` (בין הגרשיים, בלי `/` בסוף) ומעלים מחדש ל-GitHub.
+5. ב-`index.html` שמים אותה בשורה `const DB_URL = '';` (בין הגרשיים, בלי `/` בסוף).
+6. **Build → Authentication → Get started → Sign-in method → Anonymous → Enable → Save**.
+   כל מכשיר מקבל "חשבון שקוף" בלי הרשמה, וכך רק מי שתפס כיתה יכול לשחרר אותה.
+7. **⚙️ Project settings → General → Your apps** → מעתיקים את ה-`apiKey` ושמים אותו בשורה `const API_KEY = '';` ב-`index.html`.
+   (המפתח הזה ציבורי מטבעו. מה שמגן על המסד הם החוקים מסעיף 3.) מעלים מחדש ל-GitHub.
 
-תפיסה תקפה רק לשעה שנבחרה. חוקי המסד לא מאפשרים לתפוס חדר שמישהו כבר תפס.
+חוקי המסד לא מאפשרים לתפוס חדר שמישהו כבר תפס, לבטל תפיסה של מישהו אחר, או לקרוא את רשימת המחוברים.
 
-### מגבלה ובוט
-- אפשר לתפוס עד 2 כיתות ביום לאדם (`MAX_PER_DAY` ב-`index.html` וב-`bot.mjs`).
-- `.github/workflows/bot.yml` מריץ את `bot.mjs` כל 15 דקות. הוא מבטל תפיסות מעל המגבלה (נשארות 2 הראשונות),
-  ופותח **Issue** ב-GitHub כשיש משהו חריג: תפיסות שבוטלו, אותו שם שתופס מכמה מכשירים, או מערכת שלא מתעדכנת משחף.
-  GitHub שולח מייל על כל Issue חדש. אחרי שטיפלת, סוגרים את ה-Issue.
+### מגבלה של 2 כיתות ביום
+האתר לא נותן לתפוס יותר מ-2 כיתות ביום (`MAX_PER_DAY` ב-`index.html` וב-`bot.mjs`), והבוט בטלגרם מבטל כל מה שעובר את זה.
 
-### הודעות בווצאפ (חינם, פעם אחת)
-1. שומרים באנשי הקשר בטלפון את המספר של CallMeBot. המספר המעודכן מופיע ב-callmebot.com/blog/free-api-whatsapp-messages.
-2. שולחים לו בווצאפ את ההודעה `I allow callmebot to send me messages`. תוך כמה דקות הוא עונה עם **apikey**.
-3. ב-GitHub: **Settings → Secrets and variables → Actions → New repository secret**, ומוסיפים שניים:
-   - `WHATSAPP_PHONE`: המספר שלך בפורמט בינלאומי, למשל `972501234567` (בלי 0 ובלי +).
-   - `WHATSAPP_APIKEY`: הקוד שקיבלת.
-4. **Actions → room bot → Run workflow**, כדי לבדוק שהבוט רץ בלי שגיאות.
+## בוט בטלגרם (פעם אחת, בערך 15 דקות)
+הבוט רץ ב-Cloudflare Workers (חינם), בתיקייה `worker/`. מה הוא עושה:
+- **כל 15 דקות** הוא מבטל תפיסות מעל המגבלה (נשארות 2 הראשונות) ושולח לך הודעה כשיש משהו חריג:
+  תפיסות שבוטלו, אותו שם שתופס מכמה מכשירים, או מערכת שלא מתעדכנת משחף.
+- **אפשר לדבר איתו בעברית חופשית**, למשל "כמה מחוברים עכשיו?", "מי תפס כיתות מחר?", "תבטל את התפיסות של דני ביום שלישי".
+  הוא עונה בעזרת Claude, ועונה רק לך.
 
-מעכשיו כל Issue חדש מגיע גם בווצאפ. אותה בעיה לא נשלחת שוב כל עוד ה-Issue פתוח.
+1. **בוט בטלגרם:** בטלגרם מחפשים את `@BotFather` → `/newbot` → נותנים שם ושם משתמש. שומרים את ה-**token** שהוא שולח.
+2. **מפתח של Claude:** ב-platform.claude.com → **API Keys → Create Key**. שומרים את המפתח.
+   כל הודעה לבוט עולה בערך סנט עד שלושה. אפשר להגביל הוצאה ב-**Billing → Spend limits**.
+3. **מפתח ניהול של Firebase:** **⚙️ Project settings → Service accounts → Generate new private key**.
+   יורד קובץ JSON. לא מעלים אותו ל-GitHub ולא שולחים אותו לאף אחד.
+4. **Cloudflare:** פותחים חשבון חינם ב-dash.cloudflare.com, ואז בתיקייה `worker`:
+   ```
+   npm install
+   npx wrangler login
+   npx wrangler deploy
+   ```
+   בסוף מופיעה כתובת כמו `https://free-room-bot.<שם>.workers.dev`.
+5. **סודות** (כל פקודה שואלת את הערך):
+   ```
+   npx wrangler secret put TELEGRAM_TOKEN
+   npx wrangler secret put ANTHROPIC_API_KEY
+   npx wrangler secret put WEBHOOK_SECRET
+   npx wrangler secret put OWNER_CHAT_ID
+   npx wrangler secret put FIREBASE_SA < "<הנתיב לקובץ ה-JSON>"
+   ```
+   - `WEBHOOK_SECRET`: סיסמה ארוכה שממציאים (אותיות ומספרים בלבד).
+   - `OWNER_CHAT_ID`: בהתחלה שמים `0`. אחרי שלב 6 שולחים לבוט הודעה, והוא עונה עם ה-chat id שלך.
+     מריצים שוב את הפקודה עם המספר הזה.
+6. **מחברים את טלגרם לבוט:** פותחים בדפדפן `https://free-room-bot.<שם>.workers.dev/setup?key=<WEBHOOK_SECRET>`.
+   אמור להופיע `"ok":true`.
+7. שולחים לבוט "כמה מחוברים עכשיו?" ובודקים שהוא עונה.
+
+בדיקות בלי אינטרנט: `node bot.test.mjs` ו-`cd worker && node worker.test.mjs`.
 
 ## סטטיסטיקה – כמה נכנסים (Google Analytics, חינם, פעם אחת)
 1. בקונסולה של Firebase נכנסים לפרויקט → ⚙️ **Project settings** → לשונית **Integrations** → **Google Analytics** → **Enable** (אפשר ליצור חשבון Analytics חדש).
