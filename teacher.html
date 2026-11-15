@@ -32,6 +32,15 @@
   .list { display:flex; flex-direction:column; gap:6px; margin-top:10px; }
   .list button { font:inherit; font-size:16px; text-align:start; border:1px solid var(--line); background:var(--card); color:var(--text);
                  border-radius:14px; padding:12px 14px; cursor:pointer; }
+  /* hour chips, same look as index.html */
+  .row { display:flex; gap:8px; overflow-x:auto; padding:2px 2px 6px; margin-top:12px; scrollbar-width:none; }
+  .row::-webkit-scrollbar { display:none; }
+  .chip { flex:none; font:inherit; font-size:16px; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--text);
+          border-radius:16px; padding:8px 14px; line-height:1.2; }
+  .chip[aria-pressed=true] { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .chip small { display:block; font-size:.7rem; opacity:.75; }
+  .chip.has small::before { content:"● "; color:var(--ok); }
+  .chip[aria-pressed=true].has small::before { color:#fff; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:18px; margin-top:14px; }
   .card .who { font-size:1.25rem; font-weight:700; }
   .card .where { font-size:2rem; font-weight:700; margin:10px 0 2px; display:flex; align-items:center; gap:10px; }
@@ -75,6 +84,7 @@ const norm = s => s.replace(/["'׳״\-()]/g, ' ').replace(/\s+/g, ' ').trim();
 const matches = (name, q) => norm(q).split(' ').every(w => norm(name).includes(w));
 
 let data, names = [], picked = null;
+let at = null; // hour key the user chose for today, or null = right now (the default)
 const q = document.getElementById('q'), res = document.getElementById('result');
 
 const todayHours = () => {
@@ -99,15 +109,43 @@ function renderList() {
 
 function pick(name) {
   picked = name;
+  at = null;
   q.value = name;
   q.blur();
   store.set('lastTeacher', name);
   renderTeacher();
 }
 
-// Only today: where the teacher is right now, or (if not in a lesson) their next lesson today. Nothing else is shown.
+// "עכשיו" + one chip per hour of today; a dot marks hours this teacher has a lesson
+function hourChips(h, keys) {
+  const chip = (key, main, sub, has) => {
+    const b = el('button', { type: 'button', className: 'chip' + (has ? ' has' : ''), onclick: () => { at = key; renderTeacher(); } },
+      main, el('small', {}, sub));
+    b.setAttribute('aria-pressed', key === at);
+    return b;
+  };
+  const row = el('div', { className: 'row', role: 'group', ariaLabel: 'בחירת שעה' },
+    chip(null, 'עכשיו', nowHM(), false),
+    ...keys.map(k => chip(k, `שעה ${k}`, h[k].start, picked in h[k].teachers)));
+  requestAnimationFrame(() => row.querySelector('[aria-pressed=true]')?.scrollIntoView({ inline: 'center', block: 'nearest' }));
+  return row;
+}
+
+// Only today. Default: where the teacher is right now, or (if not in a lesson) their next lesson today.
+// With an hour chosen: where the teacher is at that hour. Other days are never shown.
 function renderTeacher() {
   const [h, keys] = todayHours();
+  if (at && !h[at]) at = null; // the day changed under us
+  const row = keys.length ? hourChips(h, keys) : '';
+  if (at) {
+    const room = h[at].teachers[picked], here = picked in h[at].teachers;
+    const kids = [el('div', { className: 'who' }, picked),
+      el('div', { className: 'where' }, here ? (room ? roomText(room) : 'בשיעור, בלי חדר קבוע') : 'אין שיעור בשעה הזו'),
+      el('div', { className: 'sub' }, `היום, שעה ${at} · ${h[at].start}–${h[at].end}` + (here && !room ? ' (למשל חינוך גופני)' : ''))];
+    kids.push(el('button', { type: 'button', onclick: () => { at = null; renderTeacher(); } }, 'חזרה לעכשיו'));
+    res.replaceChildren(row, el('div', { className: 'card' + (here ? '' : ' off') }, ...kids));
+    return;
+  }
   const t = nowHM();
   const cur = keys.find(k => h[k].start <= t && t < h[k].end);
   const here = cur && picked in h[cur].teachers;
@@ -128,7 +166,7 @@ function renderTeacher() {
     kids.push(el('div', { className: 'next' }, 'אין עוד שיעורים היום לפי המערכת.'));
   }
   kids.push(el('button', { type: 'button', onclick: () => { q.value = ''; q.focus(); renderList(); } }, 'חיפוש מורה אחר'));
-  res.replaceChildren(el('div', { className: 'card' + (here ? '' : ' off') }, ...kids));
+  res.replaceChildren(row, el('div', { className: 'card' + (here ? '' : ' off') }, ...kids));
 }
 
 function render() { header(); if (picked) renderTeacher(); else renderList(); }
