@@ -57,6 +57,7 @@
   dialog .btns button[value=cancel] { background:var(--line); color:var(--text); }
   #install { margin-top:12px; border:0; border-radius:999px; padding:8px 16px; background:#fff; color:#4338ca; font-weight:700; font-size:.9rem; }
   #install[hidden] { display:none; }
+  #teacherLink { display:inline-block; margin-top:12px; border-radius:999px; padding:8px 16px; background:rgba(255,255,255,.18); color:#fff; font-weight:500; font-size:.9rem; text-decoration:none; }
   #installDialog ol { padding-inline-start:20px; margin:10px 0 16px; line-height:1.9; }
 </style>
 </head>
@@ -66,7 +67,7 @@
     <h1>כיתה פנויה 🏫</h1>
     <div class="today" id="today"></div>
     <div class="now" id="now" hidden></div>
-    <div><button id="install" hidden>📲 הורד לטלפון</button></div>
+    <div><button id="install" hidden>📲 הורד לטלפון</button> <a id="teacherLink" href="teacher.html">🔎 איפה המורה?</a></div>
   </header>
   <div class="label">יום</div><div class="row" id="days" role="group" aria-label="בחירת יום"></div>
   <div class="label">שעה</div><div class="row" id="hours" role="group" aria-label="בחירת שעה"></div>
