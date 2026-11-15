@@ -1,0 +1,18 @@
+name: room bot
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # every 15 min (GitHub may delay a few minutes)
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write              # alerts are opened as issues; GitHub emails them to you
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node bot.test.mjs && node bot.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

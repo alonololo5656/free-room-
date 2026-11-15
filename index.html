@@ -108,6 +108,7 @@ function show(room) {
 }
 // regular classrooms only: numbered, not in the basement labs (floor 0), not a lab by name
 const regular = r => { const s = show(r); return s.floor && s.floor !== '0' && !/מעבד|מע'/.test(r); };
+const MAX_PER_DAY = 2; // keep in sync with bot.mjs
 const dbKey = r => r.replace(/[.#$\[\]\/]/g, '_');
 
 let data, day, hour, claims = {};
@@ -218,6 +219,10 @@ function askName() {
 async function claim(r) {
   const name = store.get('name') || await askName();
   if (!name) return;
+  // shortcut: limit is checked here and enforced by bot.mjs (no login, so a new id gets around it)
+  const dayClaims = await fetch(`${DB_URL}/claims/${day}.json`).then(x => x.json()).catch(() => null) || {};
+  const mine = Object.values(dayClaims).flatMap(h => Object.values(h || {})).filter(c => c.id === myId).length;
+  if (mine >= MAX_PER_DAY) return alert(`אפשר לתפוס עד ${MAX_PER_DAY} כיתות ביום. שחרר/י כיתה אחרת קודם.`);
   // the database rules only allow writing to an empty slot, so two people can't claim the same room
   const status = await fetch(claimUrl(r), { method: 'PUT', body: JSON.stringify({ by: name, id: myId, at: Date.now() }) })
     .then(x => x.status).catch(() => 0);
