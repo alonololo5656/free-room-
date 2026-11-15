@@ -316,7 +316,11 @@ installBtn.onclick = async () => {
     return;
   }
   document.getElementById('installSteps').innerHTML = isIOS
-    ? '<li>פתחו את האתר ב-<b>Safari</b></li><li>לחצו על כפתור השיתוף <b>⬆️</b> בתחתית המסך</li><li>גללו ובחרו <b>"הוסף למסך הבית"</b></li><li>לחצו <b>"הוסף"</b> למעלה</li>'
+    // Chrome on iOS (CriOS) can add to home screen too since iOS 16.4; its share button sits in the address bar.
+    ? (/CriOS/.test(navigator.userAgent)
+        ? '<li>לחצו על כפתור השיתוף <b>⬆️</b> בשורת הכתובת למעלה</li>'
+        : '<li>לחצו על כפתור השיתוף <b>⬆️</b> בתחתית המסך</li>')
+      + '<li>גללו ובחרו <b>"הוסף למסך הבית"</b></li><li>לחצו <b>"הוסף"</b></li>'
     : '<li>פתחו את האתר ב-<b>Chrome</b></li><li>לחצו על <b>⋮</b> למעלה</li><li>בחרו <b>"התקנת אפליקציה"</b> או <b>"הוספה למסך הבית"</b></li>';
   document.getElementById('installDialog').showModal();
 };
