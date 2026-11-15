@@ -1,7 +1,7 @@
 {
   "rules": {
-    ".read": "auth != null && auth.uid === 'ADMIN_UID'",
-    ".write": "auth != null && auth.uid === 'ADMIN_UID'",
+    ".read": "auth != null && auth.uid === 'fevqMUi2MbcIiKp7rRW4al2vHsH3'",
+    ".write": "auth != null && auth.uid === 'fevqMUi2MbcIiKp7rRW4al2vHsH3'",
     "claims": {
       "$date": {
         ".read": "$date.matches(/^\\d{4}-\\d\\d-\\d\\d$/)",
