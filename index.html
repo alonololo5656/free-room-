@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="כיתה פנויה">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700&family=Karantina:wght@700&display=swap" rel="stylesheet">
 <style>
   :root { --bg:#e9ebee; --tile:#fff; --edge:#b7bec8; --text:#14181f; --muted:#555e6c; --line:#cfd4db;
@@ -38,25 +39,27 @@
                 font:700 2rem/.9 var(--display); box-shadow:inset 0 1px 0 rgba(255,255,255,.15), 0 3px 6px -2px rgba(0,0,0,.5); }
   header .now small { display:block; font:500 .7rem/1.4 Heebo,system-ui,sans-serif; color:#fff; }
   header .now[hidden], #install[hidden] { display:none; }
-  header .inst { grid-column:1 / -1; }
+  header .inst { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
 
   .muted { color:var(--muted); font-size:.8rem; }
-  .label { font-size:.8rem; color:var(--muted); margin:16px 2px 6px; font-weight:700; }
-  .row { display:flex; gap:8px; overflow-x:auto; margin:0 -16px; padding:2px 18px 12px; scrollbar-width:none; }
+  .row { display:flex; gap:8px; overflow-x:auto; margin:6px -16px 0; padding:2px 18px 12px; scrollbar-width:none; }
   .row::-webkit-scrollbar { display:none; }
+  #days { margin-top:18px; }
 
   /* keys: every control is a moulded key with a lower edge; pressing travels it down onto the edge */
   button { font-family:inherit; font-size:16px; cursor:pointer; user-select:none; border:0; color:inherit;
            transition:transform var(--press) var(--out), box-shadow var(--press) var(--out), background-color 120ms; }
-  .chip, .go, #install, dialog .btns button { --e:var(--edge); border-radius:10px; font-weight:700;
+  .chip, .go, .hk, dialog .btns button { --e:var(--edge); border-radius:10px; font-weight:700;
            box-shadow:inset 0 1px 0 var(--hi), 0 4px 0 var(--e), 0 8px 10px -5px rgba(0,0,0,.35); }
-  .chip:active, .go:active, #install:active, dialog .btns button:active, .chip[aria-pressed=true] {
+  .chip:active, .go:active, .hk:active, dialog .btns button:active, .chip[aria-pressed=true] {
            transform:translateY(3px); box-shadow:inset 0 1px 0 var(--hi), 0 1px 0 var(--e), 0 2px 3px -1px rgba(0,0,0,.3); }
   .chip { flex:none; background:var(--tile); color:var(--text); padding:9px 14px 7px; line-height:1.2; min-height:48px; }
   .chip small { display:block; font-size:.7rem; font-weight:400; color:var(--muted); font-variant-numeric:tabular-nums; }
   .chip[aria-pressed=true] { background:var(--yellow); color:var(--ink); --e:var(--yellow-edge); --hi:rgba(255,255,255,.5); }
   .chip[aria-pressed=true] small { color:var(--ink); }
-  #install { margin-top:12px; padding:9px 16px; background:var(--yellow); color:var(--ink); --e:var(--yellow-edge); font-size:.9rem; }
+  /* header keys stay quiet on the blue: yellow is reserved for selection and rules */
+  .hk { display:inline-block; padding:9px 16px; background:#0f378f; color:#fff; --e:#082260; --hi:rgba(255,255,255,.18); font-size:.9rem; line-height:1.4; text-decoration:none;
+        transition:transform var(--press) var(--out), box-shadow var(--press) var(--out); }
 
   /* counter board: the sign at the garage entrance. One cell per floor, free count in lamp green. */
   .board { background:var(--asphalt); color:#fff; border-radius:14px; padding:6px; margin-top:10px;
@@ -65,8 +68,8 @@
   .total b { font:700 3.6rem/.85 var(--display); color:var(--count); font-variant-numeric:tabular-nums; }
   .lvls { display:flex; gap:6px; }
   .lv { flex:1; min-width:0; background:var(--cell); border-radius:9px; padding:8px 10px 6px; display:flex; justify-content:space-between; align-items:flex-end;
-        box-shadow:inset 0 1px 0 rgba(255,255,255,.08); }
-  .lv:active { transform:scale(.96); background:var(--blue); }
+        margin-bottom:3px; box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 3px 0 #000; }
+  .lv:active { transform:translateY(2px); box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 1px 0 #000; background:var(--blue); }
   .lv span { font:700 2.5rem/.85 var(--display); text-align:center; font-variant-numeric:tabular-nums; }
   .lv small { display:block; font:500 .65rem/1.5 Heebo,system-ui,sans-serif; color:var(--dim); }
   .lv .fl { color:var(--dim); } .lv .cnt { color:var(--count); }
@@ -97,16 +100,17 @@
   dialog b { font:700 1.9rem/1 var(--display); display:block; margin-bottom:4px; }
   dialog li b { font:inherit; font-weight:700; display:inline; margin:0; }
   dialog input { width:100%; font:inherit; font-size:16px; padding:10px 12px; border-radius:10px; border:2px solid var(--line); background:var(--bg); color:var(--text); margin:10px 0 16px; }
-  dialog input:focus { outline:0; border-color:var(--blue); }
+  dialog input:focus { border-color:var(--blue); }
   dialog .btns { display:flex; gap:8px; padding-bottom:4px; }
   dialog .btns button { flex:1; min-height:44px; padding:10px; background:var(--blue); color:#fff; --e:var(--blue-edge); --hi:rgba(255,255,255,.25); }
   dialog .btns button[value=cancel] { background:var(--bg); color:var(--text); --e:var(--edge); --hi:transparent; }
   #installDialog ol { padding-inline-start:20px; margin:10px 0 16px; line-height:1.9; }
+  .ic { width:1.25em; height:1.25em; vertical-align:-.25em; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 
   /* motion: runs once when the day or hour changes (class set in render), never on background refreshes */
   @media (prefers-reduced-motion: no-preference) {
-    .enter .room { animation:rise 260ms var(--out) backwards; animation-delay:calc(min(var(--i,0),10) * 22ms); }
-    .enter .lamp { animation:light 420ms var(--out) backwards; animation-delay:calc(90ms + min(var(--i,0),10) * 22ms); }
+    .enter .in { animation:rise 260ms var(--out) backwards; animation-delay:calc(min(var(--i,0),10) * 22ms); }
+    .enter .in .lamp { animation:light 420ms var(--out) backwards; animation-delay:calc(90ms + min(var(--i,0),10) * 22ms); }
     .enter .total b, .enter .lv .cnt { animation:roll 300ms var(--out) backwards; }
     dialog[open] { animation:rise 200ms var(--out); }
     dialog[open]::backdrop { animation:fade 200ms ease-out; }
@@ -124,10 +128,10 @@
     <h1>כיתה פנויה</h1>
     <div class="now" id="now" hidden></div>
     <div class="today" id="today"></div>
-    <div class="inst"><button id="install" hidden>הורד לטלפון</button></div>
+    <div class="inst"><button id="install" class="hk" hidden>הורד לטלפון</button><a id="teacherLink" class="hk" href="teacher.html">איפה המורה?</a></div>
   </header>
-  <div class="label">יום</div><div class="row" id="days" role="group" aria-label="בחירת יום"></div>
-  <div class="label">שעה</div><div class="row" id="hours" role="group" aria-label="בחירת שעה"></div>
+  <div class="row" id="days" role="group" aria-label="בחירת יום"></div>
+  <div class="row" id="hours" role="group" aria-label="בחירת שעה"></div>
   <div id="result" aria-live="polite"></div>
   <p class="muted" id="updated"></p>
 </main>
@@ -304,7 +308,7 @@ function card(r, untilTime, lessons, i) {
     kids.push(el('div', { className: 'until' }, 'פנוי עד ' + untilTime));
     if (canClaim) kids.push(el('button', { className: 'go', type: 'button', onclick: () => claim(r) }, 'אני הולך/ת לשם'));
   }
-  const e = el('div', { className: 'room' + (c ? ' taken' : '') }, ...kids);
+  const e = el('div', { className: 'room' + (c ? ' taken' : '') + (i < 12 ? ' in' : '') }, ...kids);
   e.style.setProperty('--i', i);
   return e;
 }
@@ -321,7 +325,8 @@ async function refreshClaims() {
     // a claim holds the room from its hour until the end of the day
     const got = {};
     for (const [ch, rooms] of Object.entries(dayClaims)) if (+ch <= +h) for (const [k, c] of Object.entries(rooms || {})) got[k] ??= { ...c, h: ch };
-    if (d === day && h === hour) { claims = got; render(); } // ignore answers for a slot the user already left
+    // ignore answers for a slot the user already left; re-render only on a real change (a rebuild resets scroll, taps and motion)
+    if (d === day && h === hour && JSON.stringify(got) !== JSON.stringify(claims)) { claims = got; render(); }
   } catch {}
 }
 
@@ -379,6 +384,8 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 
 // Install button: Android/Chrome installs directly via beforeinstallprompt; iPhone can't, so show steps.
 const installBtn = document.getElementById('install');
+const icon = (label, d) => `<svg class="ic" viewBox="0 0 24 24" role="img" aria-label="${label}"><path d="${d}"/></svg>`;
+const SHARE = icon('שיתוף', 'M12 15V3m-4 4 4-4 4 4M7 11H5v10h14V11h-2'), MENU = icon('תפריט', 'M12 5v.01M12 12v.01M12 19v.01');
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 let installEvt = null;
 if (!matchMedia('(display-mode: standalone)').matches && !navigator.standalone) installBtn.hidden = false;
@@ -394,10 +401,10 @@ installBtn.onclick = async () => {
   document.getElementById('installSteps').innerHTML = isIOS
     // Chrome on iOS (CriOS) can add to home screen too since iOS 16.4; its share button sits in the address bar.
     ? (/CriOS/.test(navigator.userAgent)
-        ? '<li>לחצו על כפתור השיתוף <b>⬆️</b> בשורת הכתובת למעלה</li>'
-        : '<li>לחצו על כפתור השיתוף <b>⬆️</b> בתחתית המסך</li>')
+        ? `<li>לחצו על כפתור השיתוף ${SHARE} בשורת הכתובת למעלה</li>`
+        : `<li>לחצו על כפתור השיתוף ${SHARE} בתחתית המסך</li>`)
       + '<li>גללו ובחרו <b>"הוסף למסך הבית"</b></li><li>לחצו <b>"הוסף"</b></li>'
-    : '<li>פתחו את האתר ב-<b>Chrome</b></li><li>לחצו על <b>⋮</b> למעלה</li><li>בחרו <b>"התקנת אפליקציה"</b> או <b>"הוספה למסך הבית"</b></li>';
+    : `<li>פתחו את האתר ב-<b>Chrome</b></li><li>לחצו על ${MENU} למעלה</li><li>בחרו <b>"התקנת אפליקציה"</b> או <b>"הוספה למסך הבית"</b></li>`;
   document.getElementById('installDialog').showModal();
 };
 </script>

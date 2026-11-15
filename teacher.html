@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>איפה המורה? · כיתה פנויה</title>
+<meta name="theme-color" content="#4338ca">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* same palette as index.html */
+  :root { --bg:#f3f4fa; --card:#fff; --text:#111322; --muted:#6b6f85; --accent:#4338ca; --accent2:#7c3aed;
+          --line:#e6e7f0; --ok:#059669; --okbg:#ecfdf5; --warn:#b45309; --warnbg:#fffbeb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0c0d16; --card:#171927; --text:#eceef8; --muted:#9a9db3; --accent:#818cf8;
+          --accent2:#a78bfa; --line:#272a3d; --ok:#34d399; --okbg:#0f2a22; --warn:#fbbf24; --warnbg:#2b2210; } }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:Rubik,system-ui,-apple-system,"Segoe UI",Arial,sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:560px; margin:0 auto; padding:0 16px max(32px,env(safe-area-inset-bottom)); }
+  header { background:linear-gradient(135deg,#4338ca,#7c3aed); color:#fff; padding:max(20px,env(safe-area-inset-top)) 20px 22px;
+           border-radius:0 0 28px 28px; margin:0 -16px 16px; }
+  header h1 { font-size:1.6rem; margin:0; font-weight:700; }
+  header a { color:#fff; opacity:.9; font-size:.9rem; text-decoration:none; display:inline-block; margin-bottom:8px; }
+  header .now { display:inline-block; margin-top:10px; background:rgba(255,255,255,.18); border-radius:999px; padding:5px 12px; font-size:.85rem; }
+  header .now:empty { display:none; }
+  .muted { color:var(--muted); font-size:.8rem; }
+  #q { width:100%; font:inherit; font-size:18px; padding:14px 16px; border-radius:16px; border:1px solid var(--line);
+       background:var(--card); color:var(--text); outline:none; }
+  #q:focus { border-color:var(--accent); }
+  .list { display:flex; flex-direction:column; gap:6px; margin-top:10px; }
+  .list button { font:inherit; font-size:16px; text-align:start; border:1px solid var(--line); background:var(--card); color:var(--text);
+                 border-radius:14px; padding:12px 14px; cursor:pointer; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:18px; margin-top:14px; }
+  .card .who { font-size:1.25rem; font-weight:700; }
+  .card .where { font-size:2rem; font-weight:700; margin:10px 0 2px; display:flex; align-items:center; gap:10px; }
+  .card .where::before { content:""; width:11px; height:11px; border-radius:50%; background:var(--ok); flex:none; }
+  .card.off .where::before { background:var(--muted); }
+  .card .sub { color:var(--muted); font-size:.9rem; }
+  .card .next { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); font-size:.95rem; }
+  .card button { margin-top:14px; border:0; border-radius:12px; padding:8px 12px; background:var(--line); color:var(--text); font:inherit; font-size:.9rem; cursor:pointer; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <a href="./">→ חזרה לכיתות פנויות</a>
+    <h1>איפה המורה? 🔎</h1>
+    <div class="now" id="now"></div>
+  </header>
+  <input id="q" type="search" placeholder="הקלידו שם של מורה…" autocomplete="off" aria-label="שם המורה">
+  <div id="result" aria-live="polite"></div>
+  <p class="muted" id="updated"></p>
+</main>
+<script>
+const pad = n => String(n).padStart(2,'0');
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const todayIso = () => iso(new Date());
+const nowHM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+                set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+
+// "ט1 104*" -> "חדר 104 · ט1" (same idea as show() in index.html)
+function roomText(room) {
+  const clean = room.replace(/[*+\-\s]+$/,'').replace(/\s+-\s+/,' ');
+  const m = clean.match(/^(.*?)\s*(\d{3})\b(.*)$/);
+  if (!m) return clean;
+  const label = (m[1] + m[3]).trim();
+  return `חדר ${m[2]}` + (label ? ` · ${label}` : '');
+}
+// match every typed word anywhere in the name, ignoring quotes/dashes ("בן נון" finds "בן-נון")
+const norm = s => s.replace(/["'׳״\-()]/g, ' ').replace(/\s+/g, ' ').trim();
+const matches = (name, q) => norm(q).split(' ').every(w => norm(name).includes(w));
+
+let data, names = [], picked = null;
+const q = document.getElementById('q'), res = document.getElementById('result');
+
+const todayHours = () => {
+  const h = data.days[todayIso()]?.hours ?? {};
+  return [h, Object.keys(h).sort((a, b) => a - b)];
+};
+
+function header() {
+  const [h, keys] = todayHours();
+  const t = nowHM(), cur = keys.find(k => h[k].start <= t && t < h[k].end);
+  document.getElementById('now').textContent = cur ? `עכשיו שעה ${cur} · עד ${h[cur].end}` : '';
+}
+
+function renderList() {
+  picked = null;
+  const v = q.value.trim();
+  if (!v) { res.replaceChildren(); return; }
+  const hits = names.filter(n => matches(n, v)).slice(0, 8);
+  if (!hits.length) { res.replaceChildren(el('div', { className: 'card' }, 'לא מצאתי מורה בשם הזה 🤔')); return; }
+  res.replaceChildren(el('div', { className: 'list' }, ...hits.map(n => el('button', { type: 'button', onclick: () => pick(n) }, n))));
+}
+
+function pick(name) {
+  picked = name;
+  q.value = name;
+  q.blur();
+  store.set('lastTeacher', name);
+  renderTeacher();
+}
+
+// Only today: where the teacher is right now, or (if not in a lesson) their next lesson today. Nothing else is shown.
+function renderTeacher() {
+  const [h, keys] = todayHours();
+  const t = nowHM();
+  const cur = keys.find(k => h[k].start <= t && t < h[k].end);
+  const here = cur && picked in h[cur].teachers;
+  const next = keys.find(k => h[k].start > t && picked in h[k].teachers);
+  const kids = [el('div', { className: 'who' }, picked)];
+  if (here) {
+    const room = h[cur].teachers[picked];
+    kids.push(el('div', { className: 'where' }, room ? roomText(room) : 'בשיעור, בלי חדר קבוע'));
+    kids.push(el('div', { className: 'sub' }, `שעה ${cur} · עד ${h[cur].end}` + (room ? '' : ' (למשל חינוך גופני)')));
+  } else {
+    kids.push(el('div', { className: 'where' }, 'לא בשיעור עכשיו'));
+    if (data.days[todayIso()]?.holiday) kids.push(el('div', { className: 'sub' }, '📅 ' + data.days[todayIso()].holiday));
+  }
+  if (next && next !== cur) {
+    const room = h[next].teachers[picked];
+    kids.push(el('div', { className: 'next' }, `השיעור הבא היום: שעה ${next} (${h[next].start}) · ${room ? roomText(room) : 'בלי חדר קבוע'}`));
+  } else if (!here) {
+    kids.push(el('div', { className: 'next' }, 'אין עוד שיעורים היום לפי המערכת.'));
+  }
+  kids.push(el('button', { type: 'button', onclick: () => { q.value = ''; q.focus(); renderList(); } }, 'חיפוש מורה אחר'));
+  res.replaceChildren(el('div', { className: 'card' + (here ? '' : ' off') }, ...kids));
+}
+
+function render() { header(); if (picked) renderTeacher(); else renderList(); }
+
+async function load() {
+  try {
+    data = await fetch('data.json', { cache: 'no-cache' }).then(r => r.json());
+  } catch {
+    document.getElementById('updated').textContent = 'לא הצלחתי לטעון נתונים. בדוק חיבור לאינטרנט.';
+    return;
+  }
+  const all = new Set();
+  for (const d of Object.values(data.days)) for (const hr of Object.values(d.hours)) for (const n of Object.keys(hr.teachers ?? {})) all.add(n);
+  names = [...all].sort((a, b) => a.localeCompare(b, 'he'));
+  const u = new Date(data.updated);
+  document.getElementById('updated').textContent =
+    `לפי מערכת השעות והשינויים בשחף, עודכן ב-${u.getDate()}.${u.getMonth()+1} ${pad(u.getHours())}:${pad(u.getMinutes())}. ייתכן שהמורה בפועל במקום אחר.`;
+  const last = store.get('lastTeacher');
+  if (!picked && !q.value && last && all.has(last)) picked = last, q.value = last;
+  render();
+}
+
+q.addEventListener('input', renderList);
+q.addEventListener('keydown', e => { if (e.key === 'Enter') res.querySelector('.list button')?.click(); });
+load();
+setInterval(() => { if (!document.hidden && data) render(); }, 30e3);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
